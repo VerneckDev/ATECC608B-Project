@@ -1,371 +1,191 @@
-# ATECC608B Project
+# ATECC608B — Hardware AES-128 Encryption with Arduino
 
-This project focuses on the integration, configuration, and testing of the **Microchip ATECC608B** secure element using an Arduino-based development setup.
+A project that uses the **Microchip ATECC608B** secure element as an **AES-128** cryptographic accelerator, controlled by an Arduino over I²C. The AES key is written into a protected slot of the chip, which keeps it internally: the Arduino only sends data blocks and receives the encrypted or decrypted result, and never reads the key.
 
-The main objective was to establish reliable communication with the ATECC608B through the **I²C interface**, verify the hardware configuration, and test the functionality provided by the device using the available Microchip/Arduino libraries.
+The project has three parts:
 
-The project was developed as part of a cybersecurity/hardware security study, with particular focus on **hardware-based cryptographic security and secure key storage**.
+1. **Provisioning** of the chip (locking the configuration and data zones and writing the AES key).
+2. An **interactive test** that encrypts/decrypts phrases through the Serial Monitor.
+3. **File encryption/decryption**, with a Python script that uses the Arduino and the chip as a hardware "bridge".
+
+> **Warning:** the configuration sketch performs **irreversible** operations (permanently locking the ATECC608B configuration and data zones). Read the [Provisioning](#1-provisioning--atecc608b_config) section before uploading it.
 
 ---
 
-## Project Overview
+## Repository structure
 
-The **ATECC608B** is a secure cryptographic element from Microchip designed to provide hardware-based security functions such as cryptographic operations, secure key storage, authentication, and random number generation.
+```
+ATECC608B-Project/
+├── ATECC608B_config/
+│   └── ATECC608B_config.ino    # Provisioning: verifies config, locks zones, writes the AES key to slot 8
+├── ATECC608B_test/
+│   └── ATECC608B_test.ino      # Interactive AES test (phrase typed in the Serial Monitor)
+├── ATECC608B_test2/
+│   ├── ATECC608B_test2.ino     # AES "server" firmware over serial (ENC:/DEC: protocol)
+│   └── enc_dec_file.py         # Python client: encrypts/decrypts files through the Arduino
+└── README.md
+```
 
-This project investigates the communication and operation of the device when connected to an Arduino through the I²C bus.
-
-The main stages of the project were:
-
-1. Hardware assembly and electrical connection.
-2. Configuration of the ATECC608B.
-3. Establishment of I²C communication.
-4. Testing of the device using the available libraries and example programs.
-5. Analysis of the I²C communication signals using an oscilloscope.
-6. Verification of the pull-up resistor configuration.
-7. Execution of cryptographic and security-related tests.
-
-The ATECC608B is supported by Microchip's **CryptoAuthLib**, which provides APIs for communicating with Microchip CryptoAuthentication devices, including the ATECC608B.
+No external cryptography library (for example, CryptoAuthLib) is used: the sketches talk to the chip directly over I²C using only `Wire.h`, with packet construction and the CRC-16 calculation implemented in the code itself.
 
 ---
 
 ## Hardware
 
-### Main Components
+- Arduino board with `Wire` (I²C) and an I²C buffer of at least **41 bytes** (see [notes](#implementation-notes)).
+- **ATECC608B** (7-bit I²C address **`0x60`**).
+- Pull-up resistors on SDA and SCL (many breakout boards already include them).
+- USB cable.
 
-* **ATECC608B-SSHDA-T**
-* Arduino development board
-* I²C communication interface
-* Pull-up resistors
-* Oscilloscope for signal analysis
-* External power supply where required
+Wiring:
 
-The ATECC608B communicates with the microcontroller through the **I²C bus**.
-
-### I²C Connection
-
-The basic connection consists of:
-
-```text
-Arduino              ATECC608B
-
-  SDA    ─────────►    SDA
-  SCL    ─────────►    SCL
-  VCC    ─────────►    VCC
-  GND    ─────────►    GND
+```
+Arduino                ATECC608B
+  SDA   ─────────────►  SDA
+  SCL   ─────────────►  SCL
+  VCC   ─────────────►  VCC   (supply per datasheet)
+  GND   ─────────────►  GND
 ```
 
-Pull-up resistors are required on the SDA and SCL lines because I²C uses open-drain/open-collector signalling.
-
-In the initial setup, **10 kΩ pull-up resistors** were used.
-
----
-
-## Hardware Verification
-
-Before performing the software tests, the electrical connection between the Arduino and the ATECC608B was verified.
-
-Particular attention was given to the I²C signal levels because incorrect pull-up resistance can affect the communication speed and signal integrity.
-
-An oscilloscope was used to observe the SDA and SCL signals during communication with the ATECC608B.
-
-The measured signals showed that the logic levels were sufficiently separated and that the **10 kΩ pull-up resistors were not the cause of the communication problem**.
-
-This step was important because it allowed the hardware configuration to be separated from possible software or library-related problems.
-
----
+The I²C bus runs at 100 kHz and the serial link to the PC at 9600 baud.
 
 ## Software
 
-The project uses an Arduino development environment together with libraries for communicating with the ATECC608B.
-
-The Microchip **CryptoAuthLib** provides the underlying API for communicating with CryptoAuthentication devices and supports the ATECC608B.
-
-Depending on the test, the project can use the Arduino-compatible interface and the corresponding cryptographic functions provided by the library.
-
-### Main Software Components
-
-The repository is organized into three main sections:
-
-```text
-ATECC608B-Project/
-│
-├── ATECC608B_config/
-│   └── Configuration and setup tests
-│
-├── ATECC608B_test/
-│   └── Initial ATECC608B communication and functionality tests
-│
-├── ATECC608B_test2/
-│   └── Additional device tests
-│
-└── README.md
-```
-
----
-
-## ATECC608B Configuration
-
-The first stage of the project consists of configuring and initializing the ATECC608B.
-
-The device contains internal memory areas used for configuration, data, and cryptographic keys. The configuration of these areas determines how the device can be used and which operations are permitted.
-
-The configuration stage was therefore treated separately from the general communication tests.
-
-The `ATECC608B_config` directory contains the code associated with this stage.
-
----
-
-## Communication Test
-
-The `ATECC608B_test` directory contains the initial tests used to verify communication between the Arduino and the ATECC608B.
-
-The general communication flow is:
-
-```text
-Arduino
-   │
-   │ I²C command
-   ▼
-ATECC608B
-   │
-   │ Response
-   ▼
-Arduino
-```
-
-The first objective is to confirm that the microcontroller can correctly detect and communicate with the secure element.
-
-Once communication is established, additional device functions can be tested.
-
----
-
-## Additional Tests
-
-The `ATECC608B_test2` directory contains additional experiments performed after the initial communication tests.
-
-These tests were used to investigate the behaviour of the device and its cryptographic functionality in more detail.
-
-The exact operations depend on the individual test program contained in the directory.
-
----
-
-## Pull-Up Resistor Analysis
-
-One of the hardware investigations performed during the project was the analysis of the I²C pull-up resistors.
-
-The initial configuration used:
-
-```text
-Rp = 10 kΩ
-```
-
-The resistor value was investigated because the pull-up resistance directly affects the rise time of the SDA and SCL signals.
-
-The I²C bus was observed with an oscilloscope while commands were being sent to the ATECC608B.
-
-The objective was to determine whether the logic levels were sufficiently separated and whether the communication signals were being correctly generated.
-
-The measurements showed that the logic levels were clearly distinguishable.
-
-Therefore:
-
-> The 10 kΩ pull-up resistance was considered adequate for the tested configuration and was not identified as the source of the communication problem.
-
----
-
-## Development Process
-
-The project followed a progressive testing methodology:
-
-```text
-Hardware assembly
-        │
-        ▼
-I²C connection verification
-        │
-        ▼
-ATECC608B detection
-        │
-        ▼
-Configuration
-        │
-        ▼
-Basic communication tests
-        │
-        ▼
-Cryptographic functionality
-        │
-        ▼
-Signal analysis and debugging
-        │
-        ▼
-Final verification
-```
-
-This approach made it possible to distinguish hardware-related problems from software and configuration problems.
-
----
-
-## Troubleshooting
-
-Several aspects were considered during the debugging process.
-
-### 1. Hardware Connections
-
-The first step was to verify:
-
-* Power supply
-* Ground connection
-* SDA connection
-* SCL connection
-* Pull-up resistors
-
-Incorrect wiring can prevent the ATECC608B from responding correctly.
-
-### 2. Pull-Up Resistance
-
-The initial pull-up value was **10 kΩ**.
-
-The SDA and SCL signals were examined with an oscilloscope to determine whether the voltage transitions were sufficiently clear.
-
-The measurements indicated that the logic levels were adequately separated.
-
-### 3. Library Configuration
-
-The communication library and its configuration were also investigated.
-
-The project uses libraries compatible with Microchip CryptoAuthentication devices. CryptoAuthLib officially supports the ATECC608B and provides APIs for communicating with the device.
-
-### 4. Example Programs
-
-The available example programs were used to verify that the hardware and library configuration were functioning correctly before implementing additional tests.
-
----
-
-## Results
-
-The project successfully established communication with the ATECC608B and allowed the device to be investigated through an Arduino-based setup.
-
-The hardware investigation also demonstrated that the I²C signal quality was adequate with the selected pull-up configuration.
-
-The oscilloscope measurements showed clearly separated logic levels, allowing the pull-up resistance to be ruled out as the main cause of the communication issue investigated during development.
-
-The project also provided practical experience with:
-
-* Secure elements
-* Hardware-based cryptography
-* I²C communication
-* Cryptographic key storage
-* Microcontroller-to-secure-element communication
-* Hardware debugging
-* Oscilloscope-based signal analysis
-* CryptoAuthentication libraries
-
----
-
-## Repository Structure
-
-```text
-ATECC608B-Project/
-│
-├── ATECC608B_config/
-│   └── ATECC608B configuration
-│
-├── ATECC608B_test/
-│   └── Initial device tests
-│
-├── ATECC608B_test2/
-│   └── Sending files tests
-│
-└── README.md
-```
-
----
-
-## Requirements
-
-### Hardware
-
-* Arduino-compatible development board
-* ATECC608B-SSHDA-T
-* I²C pull-up resistors
-* Breadboard and jumper wires
-* USB connection
-* Oscilloscope (recommended for hardware debugging)
-
-### Software
-
-* Arduino IDE
-* Appropriate Arduino board package
-* ATECC608B-compatible library
-* Microchip CryptoAuthLib / Arduino cryptographic library
-
-CryptoAuthLib supports the ATECC608B and other Microchip CryptoAuthentication devices.
-
----
-
-## Getting Started
-
-### 1. Clone the repository
+- [Arduino IDE](https://www.arduino.cc/en/software) (only the `Wire` library, included by default).
+- Python 3 and [`pyserial`](https://pypi.org/project/pyserial/) (only for `enc_dec_file.py`):
 
 ```bash
-git clone https://github.com/VerneckDev/ATECC608B-Project.git
-cd ATECC608B-Project
+python -m pip install pyserial
 ```
-
-### 2. Connect the hardware
-
-Connect the ATECC608B to the Arduino through the I²C interface.
-
-Verify the SDA and SCL connections and make sure the I²C bus has the required pull-up resistors.
-
-### 3. Install the required library
-
-Install the library required by the selected test program through the Arduino IDE.
-
-For projects using CryptoAuthLib, the library provides the APIs required to communicate with the ATECC608B.
-
-### 4. Open the desired test
-
-Depending on the objective, open the corresponding project:
-
-```text
-ATECC608B_config/
-ATECC608B_test/
-ATECC608B_test2/
-```
-
-### 5. Compile and upload
-
-Select the appropriate Arduino board and serial port, then compile and upload the program.
-
-### 6. Monitor the results
-
-Open the Arduino Serial Monitor and observe the output generated by the test program.
 
 ---
 
-## References
+## How it works
 
-* Microchip Technology, **CryptoAuthLib – Microchip CryptoAuthentication Library**. The library provides APIs for communication with Microchip secure elements, including the ATECC608B.
-* Microchip Technology, **ATECC608B CryptoAuthentication Secure Element**.
-* Arduino, **Arduino IDE and Arduino libraries**.
-* ATECC608B device documentation and application material.
+### Protocol with the chip
+
+The sketches send commands to the ATECC608B in the datasheet format: **word address** + **packet** (count, opcode, parameters, data) + **CRC-16** (polynomial `0x8005`, least significant byte first).
+
+| Element | Value | Use |
+|---|---|---|
+| I²C address | `0x60` | Device |
+| Word address `0x01` | Sleep | Puts the chip to sleep |
+| Word address `0x02` | Idle | Ends the session |
+| Word address `0x03` | Command | Sending commands |
+| Opcode `0x02` | Read | Read the configuration zone |
+| Opcode `0x12` | Write | Write the key to the slot |
+| Opcode `0x17` | Lock | Lock zones |
+| Opcode `0x51` | AES | Encrypt/decrypt one 16-byte block |
+
+Typical sequence for each operation: **wake** (a pulse on SDA at `0x00`, followed by a 1.5 ms wait and reading the `04 11 …` response, validated with CRC) → **command** → wait for the execution time → **read and validate the response** (count + CRC).
+
+### AES key
+
+- Slot **8** of the data zone.
+- The slot is 32 bytes: the first 16 hold the AES-128 key and the remaining 16 are padded with zeros.
+- The AES command processes **one 16-byte block at a time** (mode `0x00` = encrypt, `0x01` = decrypt), which corresponds to **AES-ECB**.
+
+For data larger than one block, the padding is **PKCS#7** and blocks are processed in sequence.
+
+---
+
+## Usage
+
+### 1. Provisioning — `ATECC608B_config`
+
+Everything runs in `setup()`, in the following order:
+
+1. Wakes the chip and reads the 128 bytes of the configuration zone.
+2. **Verifies** that the configuration is the expected one, and aborts without locking anything if it is not:
+
+   | Field | Expected value |
+   |---|---|
+   | `LockConfig` / `LockValue` | `0x55` / `0x55` (zones still unlocked) |
+   | `SlotConfig[8]` | `0x0F8F` |
+   | `KeyConfig[8]` | `0x0038` |
+   | `SlotLocked` | `0xFFFF` |
+
+3. **Locks the configuration zone** (irreversible) and confirms that `LockConfig` became `0x00`.
+4. Writes the AES key (16 bytes) to **slot 8**.
+5. **Locks the data zone** (irreversible) and confirms that `LockValue` became `0x00`.
+6. Runs a closing test: encrypts and decrypts `"ATECC608B-AES-01"` and compares the result.
+
+Steps:
+
+1. Connect the hardware and open the Serial Monitor at **9600 baud**.
+2. Upload `ATECC608B_config.ino`.
+3. Follow the messages: at the end you should see `>>> AES TEST SUCCESS <<<`.
+
+> You only need to run this sketch **once per chip**. It **does not write** the configuration zone: it only verifies and locks it. The `SlotConfig`/`KeyConfig` values must already be present on the chip (for example, written beforehand) for the process to proceed.
+
+### 2. Interactive test — `ATECC608B_test`
+
+1. Upload `ATECC608B_test.ino` (chip already provisioned).
+2. Open the Serial Monitor (9600 baud, line ending **Newline** or **Carriage return**).
+3. Type a phrase (max **240 characters**) and press Enter.
+
+The sketch applies PKCS#7 padding, encrypts all blocks, decrypts them, removes the padding, and compares the result with the original. At each step it shows the text, the bytes in hexadecimal, and the number of blocks, ending with `AES TEST SUCCESS` or `AES TEST FAILED`. It then asks for another phrase.
+
+### 3. File encryption — `ATECC608B_test2`
+
+Here the Arduino acts as an **AES server** on the serial port and Python as the client.
+
+1. Upload `ATECC608B_test2.ino`. The Arduino sends `WIRE STARTED` at startup and waits for lines.
+2. **Close the Serial Monitor** (the port can only be open in one program at a time).
+3. In `enc_dec_file.py`, set `SERIAL_PORT` (default `'COM11'`) to your port.
+4. Run:
+
+```bash
+# Encrypt (default mode)
+python enc_dec_file.py document.pdf document.enc -e
+
+# Decrypt
+python enc_dec_file.py document.enc document_recovered.pdf -d
+```
+
+**Serial protocol** (one line per request, terminated with `\n`):
+
+| Direction | Format | Example |
+|---|---|---|
+| PC → Arduino | `ENC:<hex>` or `DEC:<hex>` | `ENC:414243…` |
+| Arduino → PC | a line with the result in hexadecimal, no spaces | `9F03…` |
+| Arduino → PC (error) | `ERROR_LENGTH`, `ERROR_ENCRYPT_LENGTH`, `ERROR_DECRYPT_LENGTH`, `ERROR_ENCRYPT`, `ERROR_DECRYPT` | |
+
+How it works in detail:
+
+- The file is read in binary mode and PKCS#7 padding is applied **in Python**; the Arduino only processes complete blocks (multiples of 16 bytes).
+- Each request carries at most **240 bytes** (15 blocks), a limit set by the Arduino's SRAM.
+- The chip is woken **once per request**, not once per block.
+- When finished, the script prints the number of blocks processed and the total time.
+- For decryption, the file size must be a multiple of 16 bytes.
+
+---
+
+## Implementation notes
+
+- **I²C buffer:** writing the key generates a 40-byte transmission (1 word address + 37 packet + 2 CRC). The default `Wire` buffer on AVR boards is 32 bytes, so the configuration sketch requires `BUFFER_LENGTH ≥ 41` and aborts with `ERROR: Wire buffer too small!` if it is not enough. Use a board/core with a larger buffer or increase `BUFFER_LENGTH`.
+- **Lock without summary CRC check:** the *lock* commands use the "ignore summary CRC" option (`0x80` and `0x81`), so the chip does not validate the configuration as a whole before locking. The sketch partially compensates by checking the relevant slot 8 fields before locking.
+- **Wait times:** the code uses `delay(15)` after the AES command and `delay(40)` after *write*/*lock*, values chosen for the command execution time.
+- **Performance:** file encryption is slow by nature: hexadecimal data at 9600 baud, one I²C command per 16-byte block, and a *wake* on every request.
+
+## Limitations and security
+
+This project is **educational/experimental**. Do not use it as-is to protect real data:
+
+- **The AES key is written in the source code** (`ATECC608B_config.ino`) and, since the repository is public, it must be considered **compromised**. The chip prevents *reading* the key after provisioning, but that does not help if the key is already public. For real use, generate a random key, supply it outside the repository, or generate it on the chip itself.
+- **AES-ECB:** identical blocks produce identical ciphertext, which reveals patterns in the data. There is also no IV and no authentication (no integrity). For real data, prefer an authenticated mode (for example, AES-GCM).
+- **Irreversibility:** after provisioning, the configuration and the key **cannot be changed**. A wrongly provisioned chip becomes unusable for any other purpose.
+- **Cleartext communication:** data travels unprotected over I²C and the serial port; anyone with physical access to the bus can use the chip as an encrypt/decrypt oracle.
+- On decryption, `enc_dec_file.py` does not flag invalid padding (for example, with a corrupted file): it returns the data as it is.
 
 ---
 
 ## Author
 
-**João Pedro Verneck**
+**João Pedro Verneck** — [@VerneckDev](https://github.com/VerneckDev)
 
-University of Coimbra
-Department of Physics
-2025/2026
+## References
 
----
-
-## License
-
-This project is intended for educational and research purposes.
-
-See the repository for the applicable license and project information.
+- Microchip Technology — *ATECC608B CryptoAuthentication Device* (datasheet).
+- [Arduino `Wire` library documentation](https://www.arduino.cc/reference/en/language/functions/communication/wire/).
+- [pyserial](https://pyserial.readthedocs.io/).
