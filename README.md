@@ -41,10 +41,10 @@ Wiring:
 
 ```
 Arduino                ATECC608B
-  SDA   ─────────────►  SDA
-  SCL   ─────────────►  SCL
-  VCC   ─────────────►  VCC   (supply per datasheet)
-  GND   ─────────────►  GND
+  SDA   ─────────────►   SDA
+  SCL   ─────────────►   SCL
+  VCC   ─────────────►   VCC   (supply per datasheet)
+  GND   ─────────────►   GND
 ```
 
 The I²C bus runs at 100 kHz and the serial link to the PC at 9600 baud.
@@ -148,7 +148,7 @@ python enc_dec_file.py document.enc document_recovered.pdf -d
 | Direction | Format | Example |
 |---|---|---|
 | PC → Arduino | `ENC:<hex>` or `DEC:<hex>` | `ENC:414243…` |
-| Arduino → PC | a line with the result in hexadecimal, no spaces | `9F03…` |
+| Arduino → PC | A line with the result in hexadecimal, no spaces | `9F03…` |
 | Arduino → PC (error) | `ERROR_LENGTH`, `ERROR_ENCRYPT_LENGTH`, `ERROR_DECRYPT_LENGTH`, `ERROR_ENCRYPT`, `ERROR_DECRYPT` | |
 
 How it works in detail:
