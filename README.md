@@ -47,11 +47,11 @@ The basic connection consists of:
 
 ```text
 Arduino              ATECC608B
---------              ---------
-SDA        ─────────► SDA
-SCL        ─────────► SCL
-VCC        ─────────► VCC
-GND        ─────────► GND
+
+  SDA    ─────────►    SDA
+  SCL    ─────────►    SCL
+  VCC    ─────────►    VCC
+  GND    ─────────►    GND
 ```
 
 Pull-up resistors are required on the SDA and SCL lines because I²C uses open-drain/open-collector signalling.
@@ -96,7 +96,7 @@ ATECC608B-Project/
 │   └── Initial ATECC608B communication and functionality tests
 │
 ├── ATECC608B_test2/
-│   └── Additional tests and experiments
+│   └── Additional device tests
 │
 └── README.md
 ```
@@ -275,7 +275,7 @@ ATECC608B-Project/
 │   └── Initial device tests
 │
 ├── ATECC608B_test2/
-│   └── Additional device tests
+│   └── Sending files tests
 │
 └── README.md
 ```
